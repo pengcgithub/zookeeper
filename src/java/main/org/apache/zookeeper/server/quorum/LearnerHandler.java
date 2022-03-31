@@ -307,7 +307,8 @@ public class LearnerHandler extends Thread {
             oa = BinaryOutputArchive.getArchive(bufferedOutput);
 
             QuorumPacket qp = new QuorumPacket();
-            ia.readRecord(qp, "packet"); // 这里会等待读取follower发送过来的数据
+            // 这里会等待读取follower发送过来的数据
+            ia.readRecord(qp, "packet");
             // 尝试从jute输入流里读取数据
 
             if(qp.getType() != Leader.FOLLOWERINFO && qp.getType() != Leader.OBSERVERINFO){
