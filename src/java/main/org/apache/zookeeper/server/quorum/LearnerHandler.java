@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
  * There will be an instance of this class created by the Leader for each
  * learner. All communication with a learner is handled by this
  * class.
+ *
  */
 public class LearnerHandler extends Thread {
     private static final Logger LOG = LoggerFactory.getLogger(LearnerHandler.class);
