@@ -431,7 +431,8 @@ public class Leader {
                 self.tick++;
                 return;
             }
-            
+
+            // 关注：初始化zookeeper责任链
             startZkServer();
             
             /**
@@ -961,6 +962,7 @@ public class Leader {
                 + getSidSetString(newLeaderProposal.ackSet)
                 + " ]; starting up and setting last processed zxid: 0x{}",
                 Long.toHexString(zk.getZxid()));
+        // 初始化zookeeper责任链
         zk.startup();
         /*
          * Update the election vote here to ensure that all members of the

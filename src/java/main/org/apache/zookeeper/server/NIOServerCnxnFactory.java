@@ -91,6 +91,8 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
         thread.setDaemon(true);
 
         maxClientCnxns = maxcc;
+
+        // 开启服务端的连接通道，并绑定2181的端口
         this.ss = ServerSocketChannel.open();
         ss.socket().setReuseAddress(true);
         LOG.info("binding to port " + addr);
@@ -180,20 +182,22 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
     public void run() {
         while (!ss.socket().isClosed()) {
             try {
-                selector.select(1000); // 开始阻塞阻塞在selector这儿
-                // 通过selector去监听底层的网络连接
+                // 开始阻塞在selector这儿，通过selector去监听底层的网络连接
+                selector.select(1000);
                 Set<SelectionKey> selected;
                 synchronized (this) {
                     selected = selector.selectedKeys();
                 }
                 ArrayList<SelectionKey> selectedList = new ArrayList<SelectionKey>(
                         selected);
+                // 保证不同的客户端请求是随机处理的，避免有一定的偏向性
                 Collections.shuffle(selectedList);
 
                 /**
                  * 他要保证不同的客户端的请求是随机顺序处理的，避免有一定的偏向性，避免老是按照一定的顺序老处理客户端请求
                  */
                 for (SelectionKey k : selectedList) {
+                    // 看有没有客户端的连接请求
                     if ((k.readyOps() & SelectionKey.OP_ACCEPT) != 0) {
                         SocketChannel sc = ((ServerSocketChannel) k
                                 .channel()).accept();
@@ -206,10 +210,12 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
                         } else {
                             LOG.info("Accepted socket connection from "
                                      + sc.socket().getRemoteSocketAddress());
-                            sc.configureBlocking(false);
-                            SelectionKey sk = sc.register(selector,
+                            sc.configureBlocking(false); // 配置非阻塞
+                                SelectionKey sk = sc.register(selector,
                                     SelectionKey.OP_READ);
+                            // 实例化NIOServerCnxn，就是做了一个封装而已
                             NIOServerCnxn cnxn = createConnection(sc, sk);
+                            // 将NIOServerCnxn绑定到对应的selectionKey中
                             sk.attach(cnxn);
                             addCnxn(cnxn);
                         }

@@ -405,6 +405,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             createSessionTracker();
         }
         startSessionTracker();
+        // 初始化责任链，leader-leaderZookeeperServer，follower-followerZookeeperServer;
         setupRequestProcessors();
 
         registerJMX();
@@ -538,6 +539,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     }
 
     long createSession(ServerCnxn cnxn, byte passwd[], int timeout) {
+        // 基于sessionTracker的组件来创建一个session出来
         long sessionId = sessionTracker.createSession(timeout);
         Random r = new Random(sessionId ^ superSecret);
         r.nextBytes(passwd);
@@ -664,9 +666,17 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             }
         }
         try {
+            /**
+             * 不管是ping还是其他请求都会来执行这个方法；
+             * touch一旦执行，都会更新服务器的session他的过期时间；
+             * 12:04 + 120 = 12:06，进行处理expireTime，做成expirationInterval的倍数；
+             * 然后重新进行分桶；
+             */
             touch(si.cnxn);
             boolean validpacket = Request.isValid(si.type);
-            if (validpacket) {
+            if (validpacket) { // 有效操作
+                // 责任链模式依次处理，PrepRequestProcessor --> SyncRequestProcessor --> FinalRequestProcessor
+                // org.apache.zookeeper.server.PrepRequestProcessor
                 firstProcessor.processRequest(si);
                 if (si.cnxn != null) {
                     incInProcess();
@@ -804,6 +814,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     
     public void processConnectRequest(ServerCnxn cnxn, ByteBuffer incomingBuffer) throws IOException {
         BinaryInputArchive bia = BinaryInputArchive.getArchive(new ByteBufferInputStream(incomingBuffer));
+        // 走的jute反序列化协议
         ConnectRequest connReq = new ConnectRequest();
         connReq.deserialize(bia, "connect");
         if (LOG.isDebugEnabled()) {
@@ -851,11 +862,15 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         if (sessionTimeout > maxSessionTimeout) {
             sessionTimeout = maxSessionTimeout;
         }
+        // 计算一个session的过期时间，这边的时间是根据客户端和服务端两边的时间中和出来的；
         cnxn.setSessionTimeout(sessionTimeout);
         // We don't want to receive any packets until we are sure that the
         // session is setup
         cnxn.disableRecv();
         long sessionId = connReq.getSessionId();
+
+        // 如果客户端是首次连接，那么sessionId未分配过，则默认为0，如果不是0，说明之前已经分配过
+        // 但由于某种原因，又断开重连了，所以服务端针对这种连接会重新打开对应的session
         if (sessionId != 0) {
             long clientSessionId = connReq.getSessionId();
             LOG.info("Client attempting to renew session 0x"
@@ -863,10 +878,13 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                     + " at " + cnxn.getRemoteSocketAddress());
             serverCnxnFactory.closeSession(sessionId);
             cnxn.setSessionId(sessionId);
+            // 重新打开对应的session
             reopenSession(cnxn, sessionId, passwd, sessionTimeout);
         } else {
             LOG.info("Client attempting to establish new session at "
                     + cnxn.getRemoteSocketAddress());
+            // sessionId一开始是零，首次连接，需要创建session;
+            // session是由服务端开启的，客户端仅仅是发送connectRequest过去而已；
             createSession(cnxn, passwd, sessionTimeout);
         }
     }
@@ -888,7 +906,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         // pointing
         // to the start of the txn
         incomingBuffer = incomingBuffer.slice();
-        if (h.getType() == OpCode.auth) {
+        if (h.getType() == OpCode.auth) { // 权限认证请求
             LOG.info("got auth packet " + cnxn.getRemoteSocketAddress());
             AuthPacket authPacket = new AuthPacket();
             ByteBufferInputStream.byteBuffer2Record(incomingBuffer, authPacket);
@@ -939,6 +957,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 Request si = new Request(cnxn, cnxn.getSessionId(), h.getXid(),
                   h.getType(), incomingBuffer, cnxn.getAuthInfo());
                 si.setOwner(ServerCnxn.me);
+                // 核心：执行这步
                 submitRequest(si);
             }
         }

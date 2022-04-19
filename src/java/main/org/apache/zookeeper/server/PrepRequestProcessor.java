@@ -178,7 +178,7 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
 
     void addChangeRecord(ChangeRecord c) {
         synchronized (zks.outstandingChanges) {
-            zks.outstandingChanges.add(c);
+            zks.outstandingChanges.add(c);// 即将要进行处理的ChangeRecord
             zks.outstandingChangesForPath.put(c.path, c);
         }
     }
@@ -325,7 +325,8 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                                     zks.getTime(), type);
 
         switch (type) {
-            case OpCode.create:                
+            case OpCode.create:
+                // 检查当前session是否已经过期
                 zks.sessionTracker.checkSession(request.sessionId, request.getOwner());
                 CreateRequest createRequest = (CreateRequest)record;   
                 if(deserialize)
@@ -344,12 +345,13 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 String parentPath = path.substring(0, lastSlash);
                 ChangeRecord parentRecord = getRecordForPath(parentPath);
 
+                // 检查权限
                 checkACL(zks, parentRecord.acl, ZooDefs.Perms.CREATE,
                         request.authInfo);
                 int parentCVersion = parentRecord.stat.getCversion();
                 CreateMode createMode =
                     CreateMode.fromFlag(createRequest.getFlags());
-                if (createMode.isSequential()) {
+                if (createMode.isSequential()) { // 是否顺序节点
                     path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
                 }
                 try {
@@ -381,7 +383,9 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 parentRecord = parentRecord.duplicate(request.hdr.getZxid());
                 parentRecord.childCount++;
                 parentRecord.stat.setCversion(newCversion);
+
                 addChangeRecord(parentRecord);
+                //
                 addChangeRecord(new ChangeRecord(request.hdr.getZxid(), path, s,
                         0, listACL));
                 break;
@@ -460,6 +464,7 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 addChangeRecord(nodeRecord);
                 break;
             case OpCode.createSession:
+                // 拼接request信息
                 request.request.rewind();
                 int to = request.request.getInt();
                 request.txn = new CreateSessionTxn(to);
@@ -530,6 +535,7 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
         try {
             switch (request.type) {
                 case OpCode.create:
+                // 创建CreateRequest对象，直接调用pRequest2Txn处理
                 CreateRequest createRequest = new CreateRequest();
                 pRequest2Txn(request.type, zks.getNextZxid(), request, createRequest, true);
                 break;
@@ -621,6 +627,7 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
             //create/close session don't require request record
             case OpCode.createSession:
             case OpCode.closeSession:
+                // 创建session会话的请求
                 pRequest2Txn(request.type, zks.getNextZxid(), request, null, true);
                 break;
  
@@ -670,6 +677,8 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
             }
         }
         request.zxid = zks.getZxid();
+        // 拼接好的request交由下个链条处理；
+        // org.apache.zookeeper.server.SyncRequestProcessor
         nextProcessor.processRequest(request);
     }
 

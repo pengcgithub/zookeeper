@@ -150,6 +150,7 @@ public class NIOServerCnxn extends ServerCnxn {
                 // away without waking up the selector
                 if ((sk.interestOps() & SelectionKey.OP_WRITE) == 0) {
                     try {
+                        // 发送操作
                         sock.write(bb);
                     } catch (IOException e) {
                         // we are just doing best effort right now
@@ -157,12 +158,14 @@ public class NIOServerCnxn extends ServerCnxn {
                 }
                 // if there is nothing left to send, we are done
                 if (bb.remaining() == 0) {
+                    // 发送完毕就做些统计，然后return掉
                     packetSent();
                     return;
                 }
             }
 
             synchronized(this.factory){
+                // todo 处理拆包的问题，对于nio不理解，这块的逻辑还是看不懂；
                 sk.selector().wakeup();
                 if (LOG.isTraceEnabled()) {
                     LOG.trace("Add a buffer to outgoingBuffers, sk " + sk
@@ -170,7 +173,7 @@ public class NIOServerCnxn extends ServerCnxn {
                 }
                 outgoingBuffers.add(bb);
                 if (sk.isValid()) {
-                    sk.interestOps(sk.interestOps() | SelectionKey.OP_WRITE);
+                    sk.interestOps(sk.interestOps() | SelectionKey.OP_WRITE); // 关注这个客户端的op_write
                 }
             }
             
@@ -182,6 +185,7 @@ public class NIOServerCnxn extends ServerCnxn {
     /** Read the request payload (everything following the length prefix) */
     private void readPayload() throws IOException, InterruptedException {
         if (incomingBuffer.remaining() != 0) { // have we read length bytes?
+            // 尝试从socket中读取数据出来到incomingBuffer里去；
             int rc = sock.read(incomingBuffer); // sock is non-blocking, so ok
             if (rc < 0) {
                 throw new EndOfStreamException(
@@ -192,11 +196,14 @@ public class NIOServerCnxn extends ServerCnxn {
         }
 
         if (incomingBuffer.remaining() == 0) { // have we read length bytes?
-            packetReceived();
+            packetReceived(); // 如果读取完毕，就可以对请求进行处理
             incomingBuffer.flip();
             if (!initialized) {
+                // 还没有完成session的初始化，此时读取的第一个请求一定是createSession的请求；
                 readConnectRequest();
+                // initialized = true
             } else {
+                // 客户端其他请求，例如ping
                 readRequest();
             }
             lenBuffer.clear();
@@ -213,6 +220,7 @@ public class NIOServerCnxn extends ServerCnxn {
 
     /**
      * Handles read/write IO on connection.
+     * 处理客户端连接之后读写请求
      */
     void doIO(SelectionKey k) throws InterruptedException {
         try {
@@ -222,7 +230,9 @@ public class NIOServerCnxn extends ServerCnxn {
 
                 return;
             }
+            // 读数据事件
             if (k.isReadable()) {
+                // incomingBuffer长度是4；读取socket的前四个字节到incomingBuffer中；
                 int rc = sock.read(incomingBuffer);
                 if (rc < 0) {
                     throw new EndOfStreamException(
@@ -230,10 +240,14 @@ public class NIOServerCnxn extends ServerCnxn {
                             + Long.toHexString(sessionId)
                             + ", likely client has closed socket");
                 }
+                // 如果为零，说明前面后面没有字节
                 if (incomingBuffer.remaining() == 0) {
                     boolean isPayload;
                     if (incomingBuffer == lenBuffer) { // start of next request
                         incomingBuffer.flip();
+                        /**
+                         * 先读取当前请求的长度，然后根据长度创建一个bytebuffer
+                         */
                         isPayload = readLength(k);
                         incomingBuffer.clear();
                     } else {
@@ -241,6 +255,7 @@ public class NIOServerCnxn extends ServerCnxn {
                         isPayload = true;
                     }
                     if (isPayload) { // not the case for 4letterword
+                        // 读取真正的数据内容
                         readPayload();
                     }
                     else {
@@ -250,6 +265,8 @@ public class NIOServerCnxn extends ServerCnxn {
                     }
                 }
             }
+
+            // 写数据事件
             if (k.isWritable()) {
                 // ZooLog.logTraceMessage(LOG,
                 // ZooLog.CLIENT_DATA_PACKET_TRACE_MASK

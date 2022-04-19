@@ -137,6 +137,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                 }
                 if (si != null) {
                     // track the number of records written to the log
+                    // 追加写入的磁盘日志
                     if (zks.getZKDatabase().append(si)) {
                         logCount++;
                         if (logCount > (snapCount / 2 + randRoll)) {
@@ -175,6 +176,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                     }
                     toFlush.add(si);
                     if (toFlush.size() > 1000) {
+                        // 把数据flush到磁盘上去
                         flush(toFlush);
                     }
                 }
@@ -197,6 +199,8 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
         while (!toFlush.isEmpty()) {
             Request i = toFlush.remove();
             if (nextProcessor != null) {
+                // 响应客户端请求
+                // org.apache.zookeeper.server.FinalRequestProcessor
                 nextProcessor.processRequest(i);
             }
         }

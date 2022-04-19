@@ -459,6 +459,7 @@ public class Learner {
         ack.setZxid(ZxidUtils.makeZxid(newEpoch, 0));
         writePacket(ack, true);
         sock.setSoTimeout(self.tickTime * self.syncLimit);
+        // 初始化FollowerZookeeperServer
         zk.startup();
         /*
          * Update the election vote here to ensure that all members of the

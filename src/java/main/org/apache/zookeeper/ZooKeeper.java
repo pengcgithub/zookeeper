@@ -383,6 +383,12 @@ public class ZooKeeper {
     public ZooKeeper(String connectString, int sessionTimeout, Watcher watcher)
         throws IOException
     {
+        /**
+         * 这个版本的构造函数是用的比较多的
+         * connectString：逗号隔开的 host:port对，zk服务器地址；
+         * sessionTimeout：建立长连接就会建立一个session，会话的过期时间
+         * watcher：默认的Watcher，会收到状态更新、节点事件的消息推送
+         */
         this(connectString, sessionTimeout, watcher, false);
     }
 
@@ -444,13 +450,24 @@ public class ZooKeeper {
         LOG.info("Initiating client connection, connectString=" + connectString
                 + " sessionTimeout=" + sessionTimeout + " watcher=" + watcher);
 
+        // zk的一些事件，通知你的时候就会回调默认监听器；
         watchManager.defaultWatcher = watcher;
 
+        // 解析zk机器列表，然后封装成HostProvider组件，每次连接zk服务器可以随机提供一个机器地址；
+        // HostProvider可以实现均匀的分配连接服务器地址
         ConnectStringParser connectStringParser = new ConnectStringParser(
                 connectString);
         HostProvider hostProvider = new StaticHostProvider(
                 connectStringParser.getServerAddresses());
+
+        /**
+         * zookeeper客户端首先会创建一个网络连接器 ClientCnxn核心组件，用来管理客户端与服务器的网络交互。
+         * 另外，客户端在创建 ClientCnxn 的同时，还会初始化客户端的两个核心队列 outgoingQueue 和 pendingQueue，
+         * 分别作为客户端的请求发送队列和服务端响应的等待队列。
+         */
         cnxn = new ClientCnxn(connectStringParser.getChrootPath(),
+                // 192.168.31.109:2181.../data/crm，后续所有的znode操作，都是基于指定的chroot路径下执行的
+                // 执行set /fileId 1，最终是set /data/crm/fileId 1
                 hostProvider, sessionTimeout, this, watchManager,
                 getClientCnxnSocket(), canBeReadOnly);
         cnxn.start();
@@ -1776,9 +1793,11 @@ public class ZooKeeper {
     }
 
     private static ClientCnxnSocket getClientCnxnSocket() throws IOException {
+        // 从配置信息中获取线程名称
         String clientCnxnSocketName = System
                 .getProperty(ZOOKEEPER_CLIENT_CNXN_SOCKET);
         if (clientCnxnSocketName == null) {
+            // 默认基于nio网络通信
             clientCnxnSocketName = ClientCnxnSocketNIO.class.getName();
         }
         try {

@@ -119,11 +119,13 @@ public class ClientCnxn {
 
     /**
      * These are the packets that have been sent and are waiting for a response.
+     * 已发送并正在等待响应的数据包队列
      */
     private final LinkedList<Packet> pendingQueue = new LinkedList<Packet>();
 
     /**
      * These are the packets that need to be sent.
+     * 待发送的队列
      */
     private final LinkedList<Packet> outgoingQueue = new LinkedList<Packet>();
 
@@ -378,11 +380,15 @@ public class ClientCnxn {
         this.hostProvider = hostProvider;
         this.chrootPath = chrootPath;
 
+        // 服务端连接超时时间
         connectTimeout = sessionTimeout / hostProvider.size();
+        // 读取超时时间
         readTimeout = sessionTimeout * 2 / 3;
         readOnly = canBeReadOnly;
 
+        // 这个线程负责基于底层的socket，跟zk服务器端进行通信，发送数据过去
         sendThread = new SendThread(clientCnxnSocket);
+        // 这个线程是专门接收zk服务器反向通知过来的event事件
         eventThread = new EventThread();
 
     }
@@ -712,6 +718,7 @@ public class ClientCnxn {
 
             replyHdr.deserialize(bbia, "header");
             if (replyHdr.getXid() == -2) {
+                // -2 表示ping的响应
                 // -2 is the xid for pings
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Got ping response for sessionid: 0x"
@@ -862,9 +869,9 @@ public class ClientCnxn {
                 // TODO: here we have the only remaining use of zooKeeper in
                 // this class. It's to be eliminated!
                 if (!disableAutoWatchReset) {
-                    List<String> dataWatches = zooKeeper.getDataWatches();
-                    List<String> existWatches = zooKeeper.getExistWatches();
-                    List<String> childWatches = zooKeeper.getChildWatches();
+                    List<String> dataWatches = zooKeeper.getDataWatches(); // 监听一个znode数据的变化
+                    List<String> existWatches = zooKeeper.getExistWatches(); // 监听一个znode是否存在
+                    List<String> childWatches = zooKeeper.getChildWatches(); // 监听一个znode下的子节点的变化
                     if (!dataWatches.isEmpty()
                                 || !existWatches.isEmpty() || !childWatches.isEmpty()) {
                         SetWatches sw = new SetWatches(lastZxid,
@@ -875,6 +882,7 @@ public class ClientCnxn {
                         h.setType(ZooDefs.OpCode.setWatches);
                         h.setXid(-8);
                         Packet packet = new Packet(h, new ReplyHeader(), sw, null, null);
+                        // 封装了一个packet，里面放了一堆监听器
                         outgoingQueue.addFirst(packet);
                     }
                 }
@@ -884,9 +892,13 @@ public class ClientCnxn {
                             OpCode.auth), null, new AuthPacket(0, id.scheme,
                             id.data), null, null));
                 }
+
+                // 核心：将ConnectRequest封装成一个packet，然后放到queue中
                 outgoingQueue.addFirst(new Packet(null, null, conReq,
                             null, null, readOnly));
             }
+
+            // SocketChannel开启读/写操作
             clientCnxnSocket.enableReadWriteOnly();
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Session establishment request sent on "
@@ -964,6 +976,7 @@ public class ClientCnxn {
             }
             logStartConnect(addr);
 
+            // 连接zk服务端
             clientCnxnSocket.connect(addr);
         }
 
@@ -982,28 +995,37 @@ public class ClientCnxn {
         public void run() {
             clientCnxnSocket.introduce(this,sessionId);
             clientCnxnSocket.updateNow();
+            // 设置最近发送时间和心跳时间
             clientCnxnSocket.updateLastSendAndHeard();
             int to;
+            // 最近一次ping的时间
             long lastPingRwServer = System.currentTimeMillis();
             final int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             while (state.isAlive()) {
                 try {
-                    if (!clientCnxnSocket.isConnected()) {
-                        if(!isFirstConnect){
+                    if (!clientCnxnSocket.isConnected()) { // 如果socket还没有建立连接，进入方法尝试进入方法；
+                        if(!isFirstConnect){// 不是第一次连接
                             try {
+                                // 不是第一次连接，再次连接时会先睡眠1s；
                                 Thread.sleep(r.nextInt(1000));
                             } catch (InterruptedException e) {
                                 LOG.warn("Unexpected exception", e);
                             }
                         }
                         // don't re-establish connection if we are closing
+                        // 如果连接关闭，跳出循环
                         if (closing || !state.isAlive()) {
                             break;
                         }
+                        // 负责建立连接
                         startConnect();
                         clientCnxnSocket.updateLastSendAndHeard();
                     }
 
+                    /**
+                     * 计算selector的select方法的等待时间
+                     * 如果还未连接则用connectTimeout计算，否则用readTimeout计算
+                     */
                     if (state.isConnected()) {
                         // determine whether we need to send an AuthFailed event.
                         if (zooKeeperSaslClient != null) {
@@ -1040,21 +1062,26 @@ public class ClientCnxn {
                     } else {
                         to = connectTimeout - clientCnxnSocket.getIdleRecv();
                     }
-                    
+
+                    // 超时了则抛异常SessionTimeoutException，但这个异常会被上层catch住，尝试重连；
                     if (to <= 0) {
+                        // 捕获异常什么也不做，继续循环尝试重新连接
                         throw new SessionTimeoutException(
                                 "Client session timed out, have not heard from server in "
                                         + clientCnxnSocket.getIdleRecv() + "ms"
                                         + " for sessionid 0x"
                                         + Long.toHexString(sessionId));
                     }
+
+                    // 如果连接成功，就不断地ping
                     if (state.isConnected()) {
-                    	//1000(1 second) is to prevent race condition missing to send the second ping
+                        //1000(1 second) is to prevent race condition missing to send the second ping
                     	//also make sure not to send too many pings when readTimeout is small 
                         int timeToNextPing = readTimeout / 2 - clientCnxnSocket.getIdleSend() - 
                         		((clientCnxnSocket.getIdleSend() > 1000) ? 1000 : 0);
                         //send a ping request either time is due or no packet sent out within MAX_SEND_PING_INTERVAL
                         if (timeToNextPing <= 0 || clientCnxnSocket.getIdleSend() > MAX_SEND_PING_INTERVAL) {
+                            // 进行ping,把ping包也加入到outgoingQueue中
                             sendPing();
                             clientCnxnSocket.updateLastSend();
                         } else {
@@ -1065,6 +1092,7 @@ public class ClientCnxn {
                     }
 
                     // If we are in read-only mode, seek for read/write server
+                    // client连接了只读的server时，不断根据hostProvider找到一个可读写的server
                     if (state == States.CONNECTEDREADONLY) {
                         long now = System.currentTimeMillis();
                         int idlePingRwServer = (int) (now - lastPingRwServer);
@@ -1073,11 +1101,13 @@ public class ClientCnxn {
                             idlePingRwServer = 0;
                             pingRwTimeout =
                                 Math.min(2*pingRwTimeout, maxPingRwTimeout);
+                            // ping读写的server
                             pingRwServer();
                         }
                         to = Math.min(to, pingRwTimeout - idlePingRwServer);
                     }
 
+                    /** 核心：进行传输，传输outgoingQueue队列中的Packet **/
                     clientCnxnSocket.doTransport(to, pendingQueue, outgoingQueue, ClientCnxn.this);
                 } catch (Throwable e) {
                     if (closing) {
@@ -1210,6 +1240,7 @@ public class ClientCnxn {
         void onConnected(int _negotiatedSessionTimeout, long _sessionId,
                 byte[] _sessionPasswd, boolean isRO) throws IOException {
             negotiatedSessionTimeout = _negotiatedSessionTimeout;
+            // 会话超时
             if (negotiatedSessionTimeout <= 0) {
                 state = States.CLOSED;
 
@@ -1338,6 +1369,7 @@ public class ClientCnxn {
         Packet packet = queuePacket(h, r, request, response, null, null, null,
                     null, watchRegistration);
         synchronized (packet) {
+            // 知道请求发送完毕，同时收到响应才会发送完成；
             while (!packet.finished) {
                 packet.wait();
             }
@@ -1392,6 +1424,7 @@ public class ClientCnxn {
                 outgoingQueue.add(packet);
             }
         }
+        // 唤醒底层的网络通信组件
         sendThread.getClientCnxnSocket().wakeupCnxn();
         return packet;
     }

@@ -175,9 +175,11 @@ public class FinalRequestProcessor implements RequestProcessor {
                 zks.serverStats().updateLatency(request.createTime);
 
                 lastOp = "SESS";
+                // 修改连接的stat信息
                 cnxn.updateStatsForResponse(request.cxid, request.zxid, lastOp,
                         request.createTime, System.currentTimeMillis());
 
+                // 将connectResponse发送回去
                 zks.finishSessionInit(request.cnxn, true);
                 return;
             }
