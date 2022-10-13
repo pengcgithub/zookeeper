@@ -337,6 +337,7 @@ public class QuorumCnxManager {
               * Start a new connection if doesn't have one already.
               */
              if (!queueSendMap.containsKey(sid)) {
+                 // 如果之前没有初始化，那么先初始化队列
                  ArrayBlockingQueue<ByteBuffer> bq = new ArrayBlockingQueue<ByteBuffer>(
                          SEND_CAPACITY);
                  queueSendMap.put(sid, bq);

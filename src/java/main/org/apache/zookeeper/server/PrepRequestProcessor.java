@@ -348,10 +348,19 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 // 检查权限
                 checkACL(zks, parentRecord.acl, ZooDefs.Perms.CREATE,
                         request.authInfo);
+                // 类似版本好
                 int parentCVersion = parentRecord.stat.getCversion();
                 CreateMode createMode =
                     CreateMode.fromFlag(createRequest.getFlags());
-                if (createMode.isSequential()) { // 是否顺序节点
+                if (createMode.isSequential()) {
+                    /**
+                     * 是否顺序节点的处理逻辑
+                     * /path/api0000000001
+                     *
+                     * parentCVersion = 1
+                     * String.format(Locale.ENGLISH, "%010d", parentCVersion)
+                     * 这段代码的逻辑是，生成十位数的字符串，例如parentCVersion=1，那么前面补齐九位数。
+                     */
                     path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
                 }
                 try {
@@ -385,7 +394,6 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 parentRecord.stat.setCversion(newCversion);
 
                 addChangeRecord(parentRecord);
-                //
                 addChangeRecord(new ChangeRecord(request.hdr.getZxid(), path, s,
                         0, listACL));
                 break;
@@ -477,6 +485,8 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 // queues up this operation without being the session owner.
                 // this request is the last of the session so it should be ok
                 //zks.sessionTracker.checkSession(request.sessionId, request.getOwner());
+
+                // 通过sessionId直接定位出来这个session创建的所有临时节点
                 HashSet<String> es = zks.getZKDatabase()
                         .getEphemerals(request.sessionId);
                 synchronized (zks.outstandingChanges) {
@@ -489,6 +499,9 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                         }
                     }
                     for (String path2Delete : es) {
+                        /**
+                         * 清除session对应的临时节点
+                         */
                         addChangeRecord(new ChangeRecord(request.hdr.getZxid(),
                                 path2Delete, null, 0, null));
                     }
@@ -676,9 +689,10 @@ public class PrepRequestProcessor extends Thread implements RequestProcessor {
                 request.txn = new ErrorTxn(Code.MARSHALLINGERROR.intValue());
             }
         }
+        // 给请求设置一个zxid
         request.zxid = zks.getZxid();
         // 拼接好的request交由下个链条处理；
-        // org.apache.zookeeper.server.SyncRequestProcessor
+        // org.apache.zookeeper.server.quorum.ProposalRequestProcessor.processRequest
         nextProcessor.processRequest(request);
     }
 

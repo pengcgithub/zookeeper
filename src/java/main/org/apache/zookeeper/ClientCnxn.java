@@ -474,6 +474,9 @@ public class ClientCnxn {
                             event.getPath()),
                             event);
             // queue the pair (watch set & event) for later processing
+            /**
+             * 加入到 waitingEvents 中、等待 run 方法 拿出来处理
+             */
             waitingEvents.add(pair);
         }
 
@@ -525,6 +528,7 @@ public class ClientCnxn {
                   WatcherSetEventPair pair = (WatcherSetEventPair) event;
                   for (Watcher watcher : pair.watchers) {
                       try {
+                          // 调用process方法，串行同步处理
                           watcher.process(pair.event);
                       } catch (Throwable t) {
                           LOG.error("Error while calling watcher ", t);
@@ -622,6 +626,7 @@ public class ClientCnxn {
     }
 
     private void finishPacket(Packet p) {
+        // 在Packet发送前并不会被序列化发送过去，避免发送不必要的信息
         if (p.watchRegistration != null) {
             p.watchRegistration.register(p.replyHeader.getErr());
         }
@@ -771,6 +776,7 @@ public class ClientCnxn {
                             + Long.toHexString(sessionId));
                 }
 
+                // 加入到事件队列中，由eventThread处理
                 eventThread.queueEvent( we );
                 return;
             }
@@ -826,6 +832,7 @@ public class ClientCnxn {
                             + Long.toHexString(sessionId) + ", packet:: " + packet);
                 }
             } finally {
+                // 将Watcher 保存在 ClientWatchManager
                 finishPacket(packet);
             }
         }
@@ -949,6 +956,10 @@ public class ClientCnxn {
                 addr = rwServerAddress;
                 rwServerAddress = null;
             } else {
+                /**
+                 * hostProvider其实是把打乱的机器列表做成一个环形，在这个环形里面，每次都会尝试从第一个开始，选择一套机器出来，每个客户端优先尝试的zk的服务器都是随机的一台
+                 * zk03、zk01、zk02
+                 */
                 addr = hostProvider.next(1000);
             }
 
@@ -1137,8 +1148,10 @@ public class ClientCnxn {
                                             + ", unexpected error"
                                             + RETRY_CONN_MSG, e);
                         }
+                        // 关闭连接，完成失败请求
                         cleanup();
                         if (state.isAlive()) {
+                            // 发送连接断开的监听事件，清空所有的监听器
                             eventThread.queueEvent(new WatchedEvent(
                                     Event.EventType.None,
                                     Event.KeeperState.Disconnected,
@@ -1212,13 +1225,16 @@ public class ClientCnxn {
         }
 
         private void cleanup() {
+            // 1、客户端主动断开跟服务器之间的一切连接
             clientCnxnSocket.cleanup();
+            // 2、对所有已发送出去，但正在等待响应的请求，都进行完成，标识其失败；
             synchronized (pendingQueue) {
                 for (Packet p : pendingQueue) {
                     conLossPacket(p);
                 }
                 pendingQueue.clear();
             }
+            // 3、对于还没发送出去的请求，同时进行完成，标记其失败；
             synchronized (outgoingQueue) {
                 for (Packet p : outgoingQueue) {
                     conLossPacket(p);
@@ -1369,7 +1385,7 @@ public class ClientCnxn {
         Packet packet = queuePacket(h, r, request, response, null, null, null,
                     null, watchRegistration);
         synchronized (packet) {
-            // 知道请求发送完毕，同时收到响应才会发送完成；
+            // 直到请求发送完毕，同时收到响应才会发送完成；
             while (!packet.finished) {
                 packet.wait();
             }

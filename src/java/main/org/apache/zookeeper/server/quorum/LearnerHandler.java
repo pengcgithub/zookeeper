@@ -212,6 +212,10 @@ public class LearnerHandler extends Thread {
                 if (LOG.isTraceEnabled()) {
                     ZooTrace.logQuorumPacket(LOG, traceMask, 'o', p);
                 }
+                /**
+                 * oa就是jute的支持序列化的输出流，os底层封装的输出流，实际上来说就是socket的输出流，
+                 * 跟follower之间的连接如果说此时有一个follower崩溃了，对于leader而言，是在这里可以感知到的；
+                 */
                 oa.writeRecord(p, "packet");
             } catch (IOException e) {
                 if (!sock.isClosed()) {
@@ -220,6 +224,7 @@ public class LearnerHandler extends Thread {
                         // this will cause everything to shutdown on
                         // this learner handler and will help notify
                         // the learner/observer instantaneously
+                        // 关闭sock释放资源
                         sock.close();
                     } catch(IOException ie) {
                         LOG.warn("Error closing socket for handler " + this, ie);
@@ -514,6 +519,7 @@ public class LearnerHandler extends Thread {
                     Thread.currentThread().setName(
                             "Sender-" + sock.getRemoteSocketAddress());
                     try {
+                        // 发送请求数据包到follower节点
                         sendPackets();
                     } catch (InterruptedException e) {
                         LOG.warn("Unexpected interruption",e);
@@ -556,9 +562,11 @@ public class LearnerHandler extends Thread {
 
             /**
              * 从follower那边接收请求
+             * ack + 过半写机制
              */
             while (true) {
                 qp = new QuorumPacket();
+                // 如果follower宕机，这边读取是会抛出异常的
                 ia.readRecord(qp, "packet");
 
                 long traceMask = ZooTrace.SERVER_PACKET_TRACE_MASK;
@@ -578,12 +586,14 @@ public class LearnerHandler extends Thread {
 
                 switch (qp.getType()) {
                 case Leader.ACK:
+                    // ack处理
                     if (this.learnerType == LearnerType.OBSERVER) {
                         if (LOG.isDebugEnabled()) {
                             LOG.debug("Received ACK from Observer  " + this.sid);
                         }
                     }
                     syncLimitCheck.updateAck(qp.getZxid());
+                    // 在半数以上的节点接收到请求并发送 ACK 后，会将请求通过 zk.commitProcessor.commit(p.request); 写入到 CommitProcessor.committedRequests 队列中；
                     leader.processAck(this.sid, qp.getZxid(), sock.getLocalSocketAddress());
                     break;
                 case Leader.PING:
@@ -626,7 +636,8 @@ public class LearnerHandler extends Thread {
                     qp.setData(bos.toByteArray());
                     queuedPackets.add(qp);
                     break;
-                case Leader.REQUEST:                    
+                case Leader.REQUEST:
+                    // 接受follower转发过来的请求，createSession或则其他事物操作
                     bb = ByteBuffer.wrap(qp.getData());
                     sessionId = bb.getLong();
                     cxid = bb.getInt();

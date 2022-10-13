@@ -36,19 +36,25 @@ import org.apache.zookeeper.data.StatPersisted;
  * 
  */
 public class DataNode implements Record {
-    /** the parent of this datanode */
+    /** the parent of this datanode
+     * 父节点
+     * */
     DataNode parent;
 
-    /** the data for this datanode */
+    /** the data for this datanode
+     * 存储业务数据
+     * */
     byte data[];
 
     /**
      * the acl map long for this datanode. the datatree has the map
+     * 记录客户端对znode节点的访问权限，如ip
      */
     Long acl;
 
     /**
      * the stat for this node that is persisted to disk.
+     * 包含znode节点的状态信息，比如事物id、版本号、时间戳等
      */
     public StatPersisted stat;
 
@@ -56,6 +62,7 @@ public class DataNode implements Record {
      * the list of children for this node. note that the list of children string
      * does not contain the parent path -- just the last part of the path. This
      * should be synchronized on except deserializing (for speed up issues).
+     * 子节点的引用
      */
     private Set<String> children = null;
 

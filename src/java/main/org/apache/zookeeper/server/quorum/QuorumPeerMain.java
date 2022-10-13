@@ -131,7 +131,7 @@ public class QuorumPeerMain {
   
       LOG.info("Starting quorum peer");
       try {
-          // 网络连接的工厂，启动一个监听端口，用于更客户端通信的组件
+          // 网络连接的工厂，启动一个监听端口，用于跟客户端通信的组件
           ServerCnxnFactory cnxnFactory = ServerCnxnFactory.createFactory();
           cnxnFactory.configure(config.getClientPortAddress(),
                                 config.getMaxClientCnxns());

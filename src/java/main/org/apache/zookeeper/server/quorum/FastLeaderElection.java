@@ -484,6 +484,9 @@ public class FastLeaderElection implements Election {
             t.setDaemon(true);
             t.start();
 
+            /**
+             * 用于接收其他节点发送过来的消息
+             */
             this.wr = new WorkerReceiver(manager);
 
             t = new Thread(this.wr,
@@ -925,10 +928,12 @@ public class FastLeaderElection implements Election {
                              */
                             logicalclock = n.electionEpoch;
                             recvset.clear();
+                            // 比较接收到的投票和当前节点的信息进行比较，比较epoch、zxid、myid，如果为true，则更新当前节点的票据
                             if(totalOrderPredicate(n.leader, n.zxid, n.peerEpoch,
                                     getInitId(), getInitLastLoggedZxid(), getPeerEpoch())) {
                                 updateProposal(n.leader, n.zxid, n.peerEpoch);
                             } else {
+                                // 收到的票据小于当前节点票据，下一次发送票据，任然发送自己
                                 updateProposal(getInitId(),
                                         getInitLastLoggedZxid(),
                                         getPeerEpoch());
@@ -980,11 +985,14 @@ public class FastLeaderElection implements Election {
                             /*
                              * This predicate is true once we don't read any new
                              * relevant message from the reception queue
+                             *
+                             * 如果Notification为空，说明leader节点是可以确定好了
                              */
                             if (n == null) {
+                                // 设置当前节点的状态
                                 self.setPeerState((proposedLeader == self.getId()) ?
                                         ServerState.LEADING: learningState());
-
+                                // 组装生成这次leader选举最终投票的结果
                                 Vote endVote = new Vote(proposedLeader,
                                                         proposedZxid,
                                                         logicalclock,

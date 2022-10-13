@@ -28,8 +28,20 @@ import org.apache.zookeeper.Watcher.Event.KeeperState;
  *  was involved in the event.
  */
 public class WatchedEvent {
+
+    /**
+     * 客户端和服务器端的链接状态
+     */
     final private KeeperState keeperState;
+
+    /**
+     * 事件类型，例如节点创建、节点变更、节点删除、子节点变更等
+     */
     final private EventType eventType;
+
+    /**
+     * 监听变动的路径
+     */
     private String path;
     
     /**

@@ -163,6 +163,7 @@ public class ZooKeeper {
             switch (type) {
             case None:
                 result.add(defaultWatcher);
+                // 如果客户端连接不是连接状态，就会设置clear=true，然后就会清空本地的所有监听器
                 boolean clear = ClientCnxn.getDisableAutoResetWatch() &&
                         state != Watcher.Event.KeeperState.SyncConnected;
 
@@ -197,6 +198,9 @@ public class ZooKeeper {
             case NodeDataChanged:
             case NodeCreated:
                 synchronized (dataWatches) {
+                    /**
+                     * 根据clientPath路径，从dataWatches中获取watcher，并且从集合中删除watcher；
+                     */
                     addTo(dataWatches.remove(clientPath), result);
                 }
                 synchronized (existWatches) {
@@ -801,6 +805,7 @@ public class ZooKeeper {
             throw new KeeperException.InvalidACLException();
         }
         request.setAcl(acl);
+        // create操作的流程入口
         ReplyHeader r = cnxn.submitRequest(h, request, response, null);
         if (r.getErr() != 0) {
             throw KeeperException.create(KeeperException.Code.get(r.getErr()),
@@ -1156,6 +1161,9 @@ public class ZooKeeper {
     public byte[] getData(final String path, Watcher watcher, Stat stat)
         throws KeeperException, InterruptedException
      {
+         /**
+          * 对于原生的api里的getData而言，你可以去获取一个路径的数据，在获取这个路径的同时，可以对这个路径加一个监听器dataWatcher，就可以对这个znode的数据变化进行监听了
+          */
         final String clientPath = path;
         PathUtils.validatePath(clientPath);
 
@@ -1165,12 +1173,14 @@ public class ZooKeeper {
             wcb = new DataWatchRegistration(watcher, clientPath);
         }
 
+         // 将客户端change root directory 的路径加上、变回服务端那边正常的路径
         final String serverPath = prependChroot(clientPath);
 
         RequestHeader h = new RequestHeader();
         h.setType(ZooDefs.OpCode.getData);
         GetDataRequest request = new GetDataRequest();
         request.setPath(serverPath);
+        // 标记是否有watcher
         request.setWatch(watcher != null);
         GetDataResponse response = new GetDataResponse();
         ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);

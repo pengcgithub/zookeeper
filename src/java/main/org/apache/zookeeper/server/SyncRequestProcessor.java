@@ -128,6 +128,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                 } else {
                     si = queuedRequests.poll();
                     if (si == null) {
+                        // 刷磁盘第一个条件，队列中没有需要写的数据了；
                         flush(toFlush);
                         continue;
                     }
@@ -148,9 +149,11 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                             if (snapInProcess != null && snapInProcess.isAlive()) {
                                 LOG.warn("Too busy to snap, skipping");
                             } else {
+                                // 数据快照
                                 snapInProcess = new Thread("Snapshot Thread") {
                                         public void run() {
                                             try {
+                                                // 将数据序列化到zk底层的dataTree对象中
                                                 zks.takeSnapshot();
                                             } catch(Exception e) {
                                                 LOG.warn("Unexpected exception", e);
@@ -176,7 +179,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                     }
                     toFlush.add(si);
                     if (toFlush.size() > 1000) {
-                        // 把数据flush到磁盘上去
+                        // 刷磁盘第二个条件，当连续执行超过一千条数据，那么就刷入磁盘
                         flush(toFlush);
                     }
                 }
@@ -195,12 +198,15 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
         if (toFlush.isEmpty())
             return;
 
+        // 1、os cache刷磁盘
         zks.getZKDatabase().commit();
+
         while (!toFlush.isEmpty()) {
             Request i = toFlush.remove();
             if (nextProcessor != null) {
-                // 响应客户端请求
-                // org.apache.zookeeper.server.FinalRequestProcessor
+
+                // 2、返回ack
+                // org.apache.zookeeper.server.quorum.SendAckRequestProcessor.processRequest
                 nextProcessor.processRequest(i);
             }
         }

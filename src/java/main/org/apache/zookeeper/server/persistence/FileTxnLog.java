@@ -204,7 +204,7 @@ public class FileTxnLog implements TxnLog {
                        Long.toHexString(hdr.getZxid())));
                fos = new FileOutputStream(logFileWrite);
                logStream=new BufferedOutputStream(fos);
-               oa = BinaryOutputArchive.getArchive(logStream);
+               oa = BinaryOutputArchive.getArchive(logStream); // 序列化输出流
                FileHeader fhdr = new FileHeader(TXNLOG_MAGIC,VERSION, dbId);
                fhdr.serialize(oa, "fileheader");
                // Make sure that the magic number is written before padding.
@@ -220,7 +220,7 @@ public class FileTxnLog implements TxnLog {
             }
             Checksum crc = makeChecksumAlgorithm();
             crc.update(buf, 0, buf.length);
-            oa.writeLong(crc.getValue(), "txnEntryCRC");
+            oa.writeLong(crc.getValue(), "txnEntryCRC"); // 专门检验这段数据是不能被改变的，不能手动修改文件，不然会出错
             Util.writeTxnBytes(oa, buf);
             
             return true;
@@ -326,6 +326,7 @@ public class FileTxnLog implements TxnLog {
             if (forceSync) {
                 long startSyncNS = System.nanoTime();
 
+                // 强制数据从os cache刷入到磁盘
                 log.getChannel().force(false);
 
                 long syncElapsedMS =

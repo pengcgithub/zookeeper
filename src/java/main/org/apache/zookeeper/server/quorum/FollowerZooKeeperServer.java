@@ -75,8 +75,18 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
         commitProcessor = new CommitProcessor(finalProcessor,
                 Long.toString(getServerId()), true);
         commitProcessor.start();
+
+        /**
+         * 第二个链条，处理commit
+         * FollowerRequestProcessor -> CommitProcessor -> FinalRequestProcessor
+         */
         firstProcessor = new FollowerRequestProcessor(this, commitProcessor);
         ((FollowerRequestProcessor) firstProcessor).start();
+
+        /**
+         * 第一个链条，处理数据刷入磁盘，并且返回ack
+         * SyncRequestProcessor -> SendAckRequestProcessor
+         */
         syncProcessor = new SyncRequestProcessor(this,
                 new SendAckRequestProcessor((Learner)getFollower()));
         syncProcessor.start();
@@ -91,6 +101,7 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
         request.txn = txn;
         request.zxid = hdr.getZxid();
         if ((request.zxid & 0xffffffffL) != 0) {
+            // proposal消息的时候会写入，然后接收到commit消息的时候再取出来
             pendingTxns.add(request);
         }
         syncProcessor.processRequest(request);
@@ -116,6 +127,7 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
             System.exit(12);
         }
         Request request = pendingTxns.remove();
+        // 最终交由commitProcessor处理
         commitProcessor.commit(request);
     }
     

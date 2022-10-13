@@ -67,8 +67,14 @@ public class Request {
 
     public final ServerCnxn cnxn;
 
+    /**
+     * 请求头信息
+     */
     public TxnHeader hdr;
 
+    /**
+     * 相当于请求体内容
+     */
     public Record txn;
 
     public long zxid = -1;

@@ -122,6 +122,7 @@ public class Follower extends Learner{
             break;
         case Leader.PROPOSAL:            
             TxnHeader hdr = new TxnHeader();
+            // 反序列化
             Record txn = SerializeUtils.deserializeTxn(qp.getData(), hdr);
             if (hdr.getZxid() != lastQueued + 1) {
                 LOG.warn("Got zxid 0x"
@@ -130,9 +131,11 @@ public class Follower extends Learner{
                         + Long.toHexString(lastQueued + 1));
             }
             lastQueued = hdr.getZxid();
+            // 日志刷入磁盘，并返回ack响应
             fzk.logRequest(hdr, txn);
             break;
         case Leader.COMMIT:
+            // 当leader收集到足够的ack后，向各follower发送commit
             fzk.commit(qp.getZxid());
             break;
         case Leader.UPTODATE:

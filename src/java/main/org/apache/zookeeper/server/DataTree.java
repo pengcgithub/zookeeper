@@ -78,6 +78,8 @@ public class DataTree {
     /**
      * This hashtable provides a fast lookup to the datanodes. The tree is the
      * source of truth and is where all the locking occurs
+     *
+     * 核心的内存数据结构，用map来维护这种数据结构是最高效的；
      */
     private final ConcurrentHashMap<String, DataNode> nodes =
         new ConcurrentHashMap<String, DataNode>();
@@ -112,6 +114,7 @@ public class DataTree {
 
     /**
      * This hashtable lists the paths of the ephemeral nodes of a session.
+     * 临时节点的路径
      */
     private final Map<Long, HashSet<String>> ephemerals =
         new ConcurrentHashMap<Long, HashSet<String>>();
@@ -466,11 +469,13 @@ public class DataTree {
         stat.setVersion(0);
         stat.setAversion(0);
         stat.setEphemeralOwner(ephemeralOwner);
+        // 获取父路径的dataNode
         DataNode parent = nodes.get(parentName);
         if (parent == null) {
             throw new KeeperException.NoNodeException();
         }
         synchronized (parent) {
+            // 判断父目录下的children集合是否有需要创建的路径
             Set<String> children = parent.getChildren();
             if (children != null) {
                 if (children.contains(childName)) {
@@ -485,10 +490,14 @@ public class DataTree {
             parent.stat.setCversion(parentCVersion);
             parent.stat.setPzxid(zxid);
             Long longval = convertAcls(acl);
+            // 创建子节点信息
             DataNode child = new DataNode(parent, data, longval, stat);
+            // 把子节点加入到父节点中
             parent.addChild(childName);
+            // 把子节点信息加入到zookeeper内存数据库中，到此子节点信息加入了内存数据库，父节点在内存数据库中的状态信息也完成了更新
             nodes.put(path, child);
             if (ephemeralOwner != 0) {
+                // 如果是临时节点，则将对应的路径放入ephemerals集合中
                 HashSet<String> list = ephemerals.get(ephemeralOwner);
                 if (list == null) {
                     list = new HashSet<String>();
@@ -519,7 +528,9 @@ public class DataTree {
             updateCount(lastPrefix, 1);
             updateBytes(lastPrefix, data == null ? 0 : data.length);
         }
+        // 触发节点创建成功事件
         dataWatches.triggerWatch(path, Event.EventType.NodeCreated);
+        // 触发父节点的子节点变化事件
         childWatches.triggerWatch(parentName.equals("") ? "/" : parentName,
                 Event.EventType.NodeChildrenChanged);
         return path;
@@ -543,7 +554,10 @@ public class DataTree {
         if (node == null) {
             throw new KeeperException.NoNodeException();
         }
+        // 删除当前节点
         nodes.remove(path);
+
+        // 删除父节点
         DataNode parent = nodes.get(parentName);
         if (parent == null) {
             throw new KeeperException.NoNodeException();
@@ -588,8 +602,10 @@ public class DataTree {
             ZooTrace.logTraceMessage(LOG, ZooTrace.EVENT_DELIVERY_TRACE_MASK,
                     "childWatches.triggerWatch " + parentName);
         }
+        // 删除了一个节点，会触发你对这个节点的dataWatches
         Set<Watcher> processed = dataWatches.triggerWatch(path,
                 EventType.NodeDeleted);
+        // 同时也会触发你对这个节点的父节点会加dataWatches
         childWatches.triggerWatch(path, EventType.NodeDeleted, processed);
         childWatches.triggerWatch(parentName.equals("") ? "/" : parentName,
                 EventType.NodeChildrenChanged);
@@ -617,6 +633,7 @@ public class DataTree {
           this.updateBytes(lastPrefix, (data == null ? 0 : data.length)
               - (lastdata == null ? 0 : lastdata.length));
         }
+        // 有数据变更，就会触发对应的监听器
         dataWatches.triggerWatch(path, EventType.NodeDataChanged);
         return s;
     }
@@ -650,6 +667,7 @@ public class DataTree {
         synchronized (n) {
             n.copyStat(stat);
             if (watcher != null) {
+                // watcher = 客户端连接
                 dataWatches.addWatch(path, watcher);
             }
             return n.data;

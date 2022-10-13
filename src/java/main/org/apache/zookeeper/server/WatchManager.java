@@ -70,6 +70,11 @@ public class WatchManager {
             watch2Paths.put(watcher, paths);
         }
         paths.add(path);
+
+        /**
+         * path -> watcher集合，有哪些客户端都监听了path的变化
+         * watcher（客户端连接） -> path集合
+         */
     }
 
     public synchronized void removeWatcher(Watcher watcher) {
@@ -93,12 +98,19 @@ public class WatchManager {
     }
 
     public Set<Watcher> triggerWatch(String path, EventType type, Set<Watcher> supress) {
+        // 将事件类型（EventType）、通知状态（WatchedEvent）、节点路径封装成一个 WatchedEvent 对象
         WatchedEvent e = new WatchedEvent(type,
                 KeeperState.SyncConnected, path);
         HashSet<Watcher> watchers;
         synchronized (this) {
+            /**
+             * 根据数据节点的节点路径从 watchTable 里面取出对应的 Watcher。
+             * 如果没有找到 Watcher 对象，说明没有任何客户端在该数据节点上注册过 Watcher，直接退出。
+             * 如果找到了 Watcher 就将其提取出来，同时会直接从 watchTable 和 watch2Paths 里删除 Watcher，即 Watcher 是一次性的，触发一次就失效了;
+             */
             watchers = watchTable.remove(path);
             if (watchers == null || watchers.isEmpty()) {
+                // 没有找到watch，直接退出；
                 if (LOG.isTraceEnabled()) {
                     ZooTrace.logTraceMessage(LOG,
                             ZooTrace.EVENT_DELIVERY_TRACE_MASK,
@@ -109,6 +121,7 @@ public class WatchManager {
             for (Watcher w : watchers) {
                 HashSet<String> paths = watch2Paths.get(w);
                 if (paths != null) {
+                    // 从watch2Paths中移除掉
                     paths.remove(path);
                 }
             }
@@ -117,6 +130,8 @@ public class WatchManager {
             if (supress != null && supress.contains(w)) {
                 continue;
             }
+            // 对于需要注册 Watcher 的请求，ZooKeeper 会把请求对应的 ServerCnxn 作为一个 Watcher 存储，所以这里调用的 process 方法实质上是 ServerCnxn 的对应方法；
+            // org.apache.zookeeper.server.NIOServerCnxn.process
             w.process(e);
         }
         return watchers;

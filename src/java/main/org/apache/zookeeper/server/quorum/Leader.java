@@ -587,18 +587,23 @@ public class Leader {
             // The proposal has already been committed
             return;
         }
+        // 在leader节点，向follower发送proposal的时候记录zxid为key的对象
         Proposal p = outstandingProposals.get(zxid);
         if (p == null) {
             LOG.warn("Trying to commit future proposal: zxid 0x{} from {}",
                     Long.toHexString(zxid), followerAddr);
             return;
         }
-        
+
+        //每个proposal都对应一个ack集合
         p.ackSet.add(sid);
+
         if (LOG.isDebugEnabled()) {
             LOG.debug("Count for zxid: 0x{} is {}",
                     Long.toHexString(zxid), p.ackSet.size());
         }
+
+        // 判断是否超过半数follower返回了ack，如果超过半数则返回true
         if (self.getQuorumVerifier().containsQuorum(p.ackSet)){             
             if (zxid != lastCommitted+1) {
                 LOG.warn("Commiting zxid 0x{} from {} not first!",
@@ -613,8 +618,22 @@ public class Leader {
             if (p.request == null) {
                 LOG.warn("Going to commmit null request for proposal: {}", p);
             }
+
+            /**
+             * 发送commit给所有的follower
+             * leader 会发送一个 commit 请求，携带zxid，到 follower 节点，follower节点接收到请求时，
+             * 会将之前在2. zks.getLeader().propose(request); 中 leader 发送给 follower 节点的数据写入到自己的内存中
+             */
             commit(zxid);
+
+            /**
+             * 通知Observer
+             */
             inform(p);
+
+            /**
+             * 将请求提交到 commitProcessor 的 committedRequests 队列中；该队列会在 commitProcessor的 run 方法中消费；
+             */
             zk.commitProcessor.commit(p.request);
             if(pendingSyncs.containsKey(zxid)){
                 for(LearnerSyncRequest r: pendingSyncs.remove(zxid)) {
@@ -659,6 +678,8 @@ public class Leader {
          */
         public void processRequest(Request request) throws RequestProcessorException {
             // request.addRQRec(">tobe");
+            // org.apache.zookeeper.server.FinalRequestProcessor.processRequest
+            // 貌似ToBeAppliedRequestProcessor拦截到了一个寂寞，基本啥也没做，直接交由最后一个processor处理了
             next.processRequest(request);
             Proposal p = toBeApplied.peek();
             if (p != null && p.request != null
@@ -686,7 +707,7 @@ public class Leader {
      */
     void sendPacket(QuorumPacket qp) {
         synchronized (forwardingFollowers) {
-            for (LearnerHandler f : forwardingFollowers) {                
+            for (LearnerHandler f : forwardingFollowers) { // 遍历所有的follower的learnerHandler，然后发送出去
                 f.queuePacket(qp);
             }
         }
@@ -787,7 +808,9 @@ public class Leader {
             }
 
             lastProposed = p.packet.getZxid();
+            // 再后续follower返回ack消息的时候可以存储在对应的Proposal对象中
             outstandingProposals.put(lastProposed, p);
+            // 将proposal消息添加到每个follower对应的leaderHandler的queue中
             sendPacket(pp);
         }
         return p;

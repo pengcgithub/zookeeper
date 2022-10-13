@@ -113,6 +113,7 @@ public class FinalRequestProcessor implements RequestProcessor {
                TxnHeader hdr = request.hdr;
                Record txn = request.txn;
 
+               // 数据写入到内存数据库，写入之后起码在leader上是可以查询到数据了
                rc = zks.processTxn(hdr, txn);
             }
             // do not add non quorum packets to the queue.
@@ -138,6 +139,7 @@ public class FinalRequestProcessor implements RequestProcessor {
         if (request.cnxn == null) {
             return;
         }
+        // 客户端的连接，属于nio里面的ServerCnxn
         ServerCnxn cnxn = request.cnxn;
 
         String lastOp = "NA";

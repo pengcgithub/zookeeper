@@ -211,17 +211,18 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
                             LOG.info("Accepted socket connection from "
                                      + sc.socket().getRemoteSocketAddress());
                             sc.configureBlocking(false); // 配置非阻塞
-                                SelectionKey sk = sc.register(selector,
+                            SelectionKey sk = sc.register(selector,
                                     SelectionKey.OP_READ);
                             // 实例化NIOServerCnxn，就是做了一个封装而已
                             NIOServerCnxn cnxn = createConnection(sc, sk);
-                            // 将NIOServerCnxn绑定到对应的selectionKey中
+                            // 将NIOServerCnxn绑定到对应的selectionKey附加对象中
                             sk.attach(cnxn);
                             addCnxn(cnxn);
                         }
                     }
                     // 处理客户端发送的请求，或则返回响应给客户端
                     else if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
+                        // 从SelectionKey中取出绑定的附加对象
                         NIOServerCnxn c = (NIOServerCnxn) k.attachment();
                         c.doIO(k);
                     } else {

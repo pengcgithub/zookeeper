@@ -149,6 +149,7 @@ public class Learner {
      */
     void readPacket(QuorumPacket pp) throws IOException {
         synchronized (leaderIs) {
+            // 通过juat读取数据
             leaderIs.readRecord(pp, "packet");
         }
         long traceMask = ZooTrace.SERVER_PACKET_TRACE_MASK;
@@ -184,6 +185,7 @@ public class Learner {
         oa.close();
         QuorumPacket qp = new QuorumPacket(Leader.REQUEST, -1, baos
                 .toByteArray(), request.authInfo);
+        // 发送QuorumPacket qp给leader服务器，并强刷马上发送
         writePacket(qp, true);
     }
     
@@ -546,6 +548,7 @@ public class Learner {
     
     /**
      * Shutdown the Peer
+     * 连接全部断开，清空所有的客户端连接
      */
     public void shutdown() {
         // set the zookeeper server to null

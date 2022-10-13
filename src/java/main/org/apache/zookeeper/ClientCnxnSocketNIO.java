@@ -233,11 +233,15 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         }
     }
 
+    /**
+     * 非常经典的关闭网络连接的方式
+     */
     @Override
     void cleanup() {
+        // 此时直接认为这个网络连接出现了问题
         if (sockKey != null) {
             SocketChannel sock = (SocketChannel) sockKey.channel();
-            sockKey.cancel();
+            sockKey.cancel(); // 客户端主动断开网络连接
             try {
                 sock.socket().shutdownInput();
             } catch (IOException e) {
@@ -318,6 +322,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         sockKey = sock.register(selector, SelectionKey.OP_CONNECT);
         boolean immediateConnect = sock.connect(addr);
         if (immediateConnect) {
+            // 如果tcp连接成功，则向zk服务器端发送connectionRequest消息
             sendThread.primeConnection();
         }
     }
@@ -410,6 +415,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
                 // finishConnect方法调用那么返回true，要么抛出异常；返回true则说明跟服务器端已经建立了连接，可以发送数据了；
                 if (sc.finishConnect()) {
                     updateLastSendAndHeard();
+                    // tcp连接建立，发送createSession的请求
                     sendThread.primeConnection();
                 }
             } else if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {

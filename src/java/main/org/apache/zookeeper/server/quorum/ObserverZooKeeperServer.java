@@ -102,6 +102,9 @@ public class ObserverZooKeeperServer extends LearnerZooKeeperServer {
         commitProcessor = new CommitProcessor(finalProcessor,
                 Long.toString(getServerId()), true);
         commitProcessor.start();
+        /**
+         * 最终调用链：ObserverRequestProcessor -> CommitProcessor -> FinalRequestProcessor
+         */
         firstProcessor = new ObserverRequestProcessor(this, commitProcessor);
         ((ObserverRequestProcessor) firstProcessor).start();
 

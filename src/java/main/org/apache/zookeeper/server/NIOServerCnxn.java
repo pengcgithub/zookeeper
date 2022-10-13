@@ -201,9 +201,9 @@ public class NIOServerCnxn extends ServerCnxn {
             if (!initialized) {
                 // 还没有完成session的初始化，此时读取的第一个请求一定是createSession的请求；
                 readConnectRequest();
-                // initialized = true
+                // 会将参数设置为true，initialized = true
             } else {
-                // 客户端其他请求，例如ping
+                // 客户端其他crud请求，例如ping
                 readRequest();
             }
             lenBuffer.clear();
@@ -1121,6 +1121,8 @@ public class NIOServerCnxn extends ServerCnxn {
      */
     @Override
     synchronized public void process(WatchedEvent event) {
+        // 请求头中的 XID 设置为 -1，SendThread.readResponse读取数据的时候会用到；
+        // err = 0，客户端读取数据的时候会用到
         ReplyHeader h = new ReplyHeader(-1, -1L, 0);
         if (LOG.isTraceEnabled()) {
             ZooTrace.logTraceMessage(LOG, ZooTrace.EVENT_DELIVERY_TRACE_MASK,
@@ -1130,8 +1132,10 @@ public class NIOServerCnxn extends ServerCnxn {
         }
 
         // Convert WatchedEvent to a type that can be sent over the wire
+        // WatchedEvent 变为 WatcherEvent
         WatcherEvent e = event.getWrapper();
 
+        // 给客户端发送通知
         sendResponse(h, e, "notification");
     }
 

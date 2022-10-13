@@ -66,6 +66,7 @@ public class FollowerRequestProcessor extends Thread implements
                 // We want to queue the request to be processed before we submit
                 // the request to the leader so that we are ready to receive
                 // the response
+                // 1、将请求交给下一个处理器CommitProcessor
                 nextProcessor.processRequest(request);
                 
                 // We now ship the request to the leader. As with all
@@ -85,6 +86,7 @@ public class FollowerRequestProcessor extends Thread implements
                 case OpCode.createSession:
                 case OpCode.closeSession:
                 case OpCode.multi:
+                    // 2、事务请求会转交给Leader服务器处理
                     zks.getFollower().request(request);
                     break;
                 }

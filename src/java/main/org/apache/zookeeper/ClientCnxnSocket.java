@@ -127,7 +127,7 @@ abstract class ClientCnxnSocket {
         ByteBufferInputStream bbis = new ByteBufferInputStream(incomingBuffer);
         BinaryInputArchive bbia = BinaryInputArchive.getArchive(bbis);
         ConnectResponse conRsp = new ConnectResponse();
-        conRsp.deserialize(bbia, "connect");
+        conRsp.deserialize(bbia, "connect"); // jute序列化响应内容
 
         // read "is read-only" flag
         boolean isRO = false;

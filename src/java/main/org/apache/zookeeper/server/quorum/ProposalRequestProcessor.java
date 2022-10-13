@@ -67,20 +67,25 @@ public class ProposalRequestProcessor implements RequestProcessor {
          * contain the handler. In this case, we add it to syncHandler, and 
          * call processRequest on the next processor.
          */
-        
+
+        // 判断是否是leader的同步请求（写请求发给follower，然后由follower转发给leader）
+        // 由于本次我们客户端直接发送消息到leader节点，所以 request instanceof LearnerSyncRequest = false
         if(request instanceof LearnerSyncRequest){
             zks.getLeader().processSync((LearnerSyncRequest)request);
         } else {
-            // 走这个分支
             // org.apache.zookeeper.server.quorum.CommitProcessor.processRequest
             nextProcessor.processRequest(request);
+            // 如果事物请求头不为空，则进行事物投票等动作
             if (request.hdr != null) {
                 // We need to sync and get consensus on any transactions
                 try {
+                    // 发送proposal类型的消息给follower
                     zks.getLeader().propose(request);
                 } catch (XidRolloverException e) {
                     throw new RequestProcessorException(e.getMessage(), e);
                 }
+                // 写本地文件系统
+                // org.apache.zookeeper.server.SyncRequestProcessor.processRequest
                 syncProcessor.processRequest(request);
             }
         }

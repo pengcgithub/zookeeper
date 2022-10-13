@@ -98,17 +98,22 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
     }
 
+    // 心跳时间
     public static final int DEFAULT_TICK_TIME = 3000;
     protected int tickTime = DEFAULT_TICK_TIME;
     /** value of -1 indicates unset, use default */
     protected int minSessionTimeout = -1;
     /** value of -1 indicates unset, use default */
     protected int maxSessionTimeout = -1;
+    // session管理器
     protected SessionTracker sessionTracker;
+    // 事务日志、快照日志处理器
     private FileTxnSnapLog txnLogFactory = null;
+    // 内存数据库
     private ZKDatabase zkDb;
     protected long hzxid = 0;
     public final static Exception ok = new Exception("No prob");
+    // 构建Processor处理器
     protected RequestProcessor firstProcessor;
     protected volatile boolean running;
 
@@ -123,9 +128,11 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     // this data structure must be accessed under the outstandingChanges lock
     final HashMap<String, ChangeRecord> outstandingChangesForPath =
         new HashMap<String, ChangeRecord>();
-    
+
+    // 服务端口连接处理器
     private ServerCnxnFactory serverCnxnFactory;
 
+    // 服务端状态信息
     private final ServerStats serverStats;
 
     void removeCnxn(ServerCnxn cnxn) {
@@ -676,7 +683,18 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             boolean validpacket = Request.isValid(si.type);
             if (validpacket) { // 有效操作
                 // 责任链模式依次处理，PrepRequestProcessor --> SyncRequestProcessor --> FinalRequestProcessor
-                // org.apache.zookeeper.server.PrepRequestProcessor
+                /**
+                 * 责任链模式链条
+                 *
+                 * follow
+                 * FollowerRequestProcessor -> CommitProcessor -> FinalRequestProcessor
+                 *
+                 * leader
+                 * PrepRequestProcessor -> ProposalRequestProcessor -> CommitProcessor -> Leader.ToBeAppliedRequestProcessor -> FinalRequestProcessor
+                 *
+                 * 单机
+                 * PrepRequestProcessor --> SyncRequestProcessor --> FinalRequestProcessor
+                 */
                 firstProcessor.processRequest(si);
                 if (si.cnxn != null) {
                     incInProcess();
@@ -811,7 +829,14 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     public int getNumAliveConnections() {
         return serverCnxnFactory.getNumAliveConnections();
     }
-    
+
+    /**
+     * 1.将客户端序列化数据反序列化为 ConnectRequest connReq对象
+     * 2.判断服务端是否以ReadOnly模式启动，此时将不能处理写相关请求
+     * 3.判断客户端客户端zxid是否比服务端大，此时将抛异常
+     * 4.校验会话过期时间sessionTimeout,使其落在minSessionTimeout ~maxSessionTimeout 之间
+     * 3.根据sessionId 是否大于0判断客户端是第一次连接还是重连，第一次连接sessionId = 0，此时需要创建Session
+     */
     public void processConnectRequest(ServerCnxn cnxn, ByteBuffer incomingBuffer) throws IOException {
         BinaryInputArchive bia = BinaryInputArchive.getArchive(new ByteBufferInputStream(incomingBuffer));
         // 走的jute反序列化协议
@@ -862,7 +887,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         if (sessionTimeout > maxSessionTimeout) {
             sessionTimeout = maxSessionTimeout;
         }
-        // 计算一个session的过期时间，这边的时间是根据客户端和服务端两边的时间中和出来的；
+        // 计算一个session的过期时间，这边的时间是根据客户端和服务端两边的时间中合出来的；
         cnxn.setSessionTimeout(sessionTimeout);
         // We don't want to receive any packets until we are sure that the
         // session is setup
@@ -1010,6 +1035,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         ProcessTxnResult rc;
         int opCode = hdr.getType();
         long sessionId = hdr.getClientId();
+        // 交由ZKDatabase处理
         rc = getZKDatabase().processTxn(hdr, txn);
         if (opCode == OpCode.createSession) {
             if (txn instanceof CreateSessionTxn) {

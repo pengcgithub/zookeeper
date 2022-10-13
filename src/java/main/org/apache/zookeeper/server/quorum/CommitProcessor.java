@@ -38,14 +38,19 @@ public class CommitProcessor extends Thread implements RequestProcessor {
 
     /**
      * Requests that we are holding until the commit comes in.
+     * 刚进来的请求存储队列
      */
     LinkedList<Request> queuedRequests = new LinkedList<Request>();
 
     /**
      * Requests that have been committed.
+     * 已经完成ack确认，可以提交commit操作的队列
      */
     LinkedList<Request> committedRequests = new LinkedList<Request>();
 
+    /**
+     * 设置为ToBeAppliedProcessor
+     */
     RequestProcessor nextProcessor;
     ArrayList<Request> toProcess = new ArrayList<Request>();
 
@@ -71,17 +76,21 @@ public class CommitProcessor extends Thread implements RequestProcessor {
             while (!finished) {
                 int len = toProcess.size();
                 for (int i = 0; i < len; i++) {
+                    // 5.请求proposal已完成，交由下个processor处理即可
+                    // leader -> org.apache.zookeeper.server.quorum.Leader.ToBeAppliedRequestProcessor.processRequest
+                    // follower -> org.apache.zookeeper.server.FinalRequestProcessor.processRequest
                     nextProcessor.processRequest(toProcess.get(i));
                 }
                 toProcess.clear();
                 synchronized (this) {
+                    // 2.若没有收到足够的follower ack，则等待；
                     if ((queuedRequests.size() == 0 || nextPending != null)
                             && committedRequests.size() == 0) {
                         wait();
                         continue;
                     }
-                    // First check and see if the commit came in for the pending
-                    // request
+
+                    // 3.committedRequests不为空，说明已经收到足够的follower ack，follower已经commit本次请求
                     if ((queuedRequests.size() == 0 || nextPending != null)
                             && committedRequests.size() > 0) {
                         Request r = committedRequests.remove();
@@ -99,6 +108,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
                             nextPending.hdr = r.hdr;
                             nextPending.txn = r.txn;
                             nextPending.zxid = r.zxid;
+                            // 4.则针对leader而言，本次请求可以提交给下个processor处理
                             toProcess.add(nextPending);
                             nextPending = null;
                         } else {
@@ -115,6 +125,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
                     continue;
                 }
 
+                // 1.请求达到时，nextPending被设置为当前request，下次循环时会使用到
                 synchronized (this) {
                     // Process the next requests in the queuedRequests
                     while (nextPending == null && queuedRequests.size() > 0) {
@@ -160,6 +171,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Committing request:: " + request);
             }
+            // 很简单，直接将请求放入committedRequests，如果committedRequests有值，则表示对应的请求已经完成了过半ack，可以提交commit操作了。
             committedRequests.add(request);
             notifyAll();
         }
